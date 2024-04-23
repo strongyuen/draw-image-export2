@@ -21,7 +21,7 @@
     "morgan": "^1.9.1",
     "node-fetch": "^3.3.2",
     "pdf-lib": "^1.17.1",
-    "puppeteer": "^22.4.0",
+    "puppeteer": "^22.7.0",
     "winston": "^3.12.0"
   }
 }
