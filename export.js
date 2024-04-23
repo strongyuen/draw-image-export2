@@ -598,27 +598,24 @@ else
 							var scale  = await page.mainFrame().$eval('#LoadingComplete', div => div.getAttribute('scale'));
 							var pageCount  = parseInt(await page.mainFrame().$eval('#LoadingComplete', div => div.getAttribute('pageCount')));
 
-							if (req.body.format != 'pdf')
+							if (req.body.format != 'pdf' && bounds != null)
 							{
-								if (bounds != null)
-								{
-									bounds = JSON.parse(bounds);
-									var isPdf = req.body.format == 'pdf';
+								bounds = JSON.parse(bounds);
+								var isPdf = req.body.format == 'pdf';
 
-									//Chrome generates Pdf files larger than requested pixels size and requires scaling
-									//For images, the fixing scale shows scrollbars
-									var fixingScale = isPdf? 0.959 : 1;
-	
-									var w = Math.ceil(Math.ceil(bounds.width + bounds.x) * fixingScale);
-									
-									// +0.1 fixes cases where adding 1px below is not enough
-									// Increase this if more cropped PDFs have extra empty pages
-									var h = Math.ceil(Math.ceil(bounds.height + bounds.y) * fixingScale + (isPdf? 0.1 : 0));
-									
-									var w = Math.ceil(bounds.width + bounds.x);
-									var h = Math.ceil(bounds.height + bounds.y);
-									page.setViewport({width: w, height: h});
-								}
+								//Chrome generates Pdf files larger than requested pixels size and requires scaling
+								//For images, the fixing scale shows scrollbars
+								var fixingScale = isPdf? 0.959 : 1;
+
+								var w = Math.ceil(Math.ceil(bounds.width + bounds.x) * fixingScale);
+								
+								// +0.1 fixes cases where adding 1px below is not enough
+								// Increase this if more cropped PDFs have extra empty pages
+								var h = Math.ceil(Math.ceil(bounds.height + bounds.y) * fixingScale + (isPdf? 0.1 : 0));
+								
+								var w = Math.ceil(bounds.width + bounds.x);
+								var h = Math.ceil(bounds.height + bounds.y);
+								page.setViewport({width: w, height: h});
 							}
 
 							var pdfOptions = {
