@@ -533,17 +533,6 @@ else
 				req.body.w = req.body.w || 0;
 				req.body.h = req.body.h || 0;
 
-
-
-
-
-				console.log('req.body', JSON.stringify(req.body));
-
-
-
-
-
-				
 				// Checks parameters
 				if (req.body.format && xml && req.body.w * req.body.h <= MAX_AREA)
 				{
@@ -577,36 +566,25 @@ else
 						{
 							// LATER: Reuse same page (ie. reuse image- and font cache, reset state, viewport and remove LoadingComplete on each iteration)
 							// Moving to DRAWIO_BASE_URL but keeping DRAWIO_SERVER_URL for backward compatibility
-							//await page.goto((process.env.DRAWIO_BASE_URL || process.env.DRAWIO_SERVER_URL || 'https://viewer.diagrams.net') + '/export3.html', {waitUntil: 'networkidle0'});
-							await page.goto('https://test.draw.io/export3.html', {waitUntil: 'networkidle0'});
-
+							await page.goto((process.env.DRAWIO_BASE_URL || process.env.DRAWIO_SERVER_URL || 'https://viewer.diagrams.net') + '/export3.html', {waitUntil: 'networkidle0'});
+							
 							var arg = {
 								xml: req.body.xml,
 								format: req.body.format,
 								w: req.body.w,
 								h: req.body.h,
 								crop: req.body.crop,
-								border: req.body.border || 0,
+								border: req.body.border,
 								bg: req.body.bg,
 								allPages: req.body.allPages,
 								from: req.body.from,
 								to: req.body.to,
 								pageId: req.body.pageId,
 								scale: req.body.scale || 1,
-								extras: req.body.extras
+								extras: req.body.extras,
+								pageMargin: req.body.pageMargin
 							};
-
-
-
-
-
-
-
-							console.log('render', JSON.stringify(arg));
-
-
-
-
+							
 							await page.evaluate((arg) => {
 								return render(arg);
 							}, arg);
@@ -636,8 +614,7 @@ else
 									// +0.1 fixes cases where adding 1px below is not enough
 									// Increase this if more cropped PDFs have extra empty pages
 									var h = Math.ceil(Math.ceil(bounds.height + bounds.y) * fixingScale + (isPdf? 0.1 : 0));
-	
-
+									
 									var w = Math.ceil(bounds.width + bounds.x);
 									var h = Math.ceil(bounds.height + bounds.y);
 									page.setViewport({width: w, height: h});
@@ -676,8 +653,8 @@ else
 							
 							if (req.body.embedXml == "1" && req.body.format == 'png')
 							{
-								data = writePngWithText(data, "mxGraphModel", xml, true,
-										base64encoded);
+								data = writePngWithText(data, "mxGraphModel",
+									xml, true, base64encoded);
 							}
 							else if (req.body.embedData == "1" && req.body.format == 'png')
 							{
