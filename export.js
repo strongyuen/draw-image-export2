@@ -532,7 +532,7 @@ else
 				
 				req.body.w = req.body.w || 0;
 				req.body.h = req.body.h || 0;
-				
+
 				// Checks parameters
 				if (req.body.format && xml && req.body.w * req.body.h <= MAX_AREA)
 				{
@@ -562,41 +562,45 @@ else
 						
 						const page = await browser.newPage();
 
-						async function renderPage(pageIndex)
+						async function renderPage()
 						{
 							// LATER: Reuse same page (ie. reuse image- and font cache, reset state, viewport and remove LoadingComplete on each iteration)
 							// Moving to DRAWIO_BASE_URL but keeping DRAWIO_SERVER_URL for backward compatibility
 							await page.goto((process.env.DRAWIO_BASE_URL || process.env.DRAWIO_SERVER_URL || 'https://viewer.diagrams.net') + '/export3.html', {waitUntil: 'networkidle0'});
-
-							await page.evaluate((body, pageIndex) => {
-								return render({
-									xml: body.xml,
-									format: body.format,
-									w: body.w,
-									h: body.h,
-									border: body.border || 0,
-									bg: body.bg,
-									from: pageIndex,
-									to: pageIndex,
-									pageId: body.pageId,
-									scale: body.scale || 1,
-									extras: body.extras
-								});
-							}, req.body, pageIndex);
+							
+							var arg = {
+								xml: req.body.xml,
+								format: req.body.format,
+								w: req.body.w,
+								h: req.body.h,
+								crop: req.body.crop,
+								border: req.body.border,
+								bg: req.body.bg,
+								allPages: req.body.allPages,
+								from: req.body.from,
+								to: req.body.to,
+								pageId: req.body.pageId,
+								scale: req.body.scale || 1,
+								extras: req.body.extras,
+								pageMargin: req.body.pageMargin
+							};
+							
+							await page.evaluate((arg) => {
+								return render(arg);
+							}, arg);
 
 							//default timeout is 30000 (30 sec)
 							await page.waitForSelector('#LoadingComplete');
-							
+
 							var bounds = await page.mainFrame().$eval('#LoadingComplete', div => div.getAttribute('bounds'));
+							var pageId = await page.mainFrame().$eval('#LoadingComplete', div => div.getAttribute('page-id'))
 							var pageId = await page.mainFrame().$eval('#LoadingComplete', div => div.getAttribute('page-id'));
 							var scale  = await page.mainFrame().$eval('#LoadingComplete', div => div.getAttribute('scale'));
 							var pageCount  = parseInt(await page.mainFrame().$eval('#LoadingComplete', div => div.getAttribute('pageCount')));
-							var pdfOptions = {format: 'A4'};
-							
-							if (bounds != null)
+
+							if (req.body.format != 'pdf' && bounds != null)
 							{
 								bounds = JSON.parse(bounds);
-
 								var isPdf = req.body.format == 'pdf';
 
 								//Chrome generates Pdf files larger than requested pixels size and requires scaling
@@ -608,17 +612,17 @@ else
 								// +0.1 fixes cases where adding 1px below is not enough
 								// Increase this if more cropped PDFs have extra empty pages
 								var h = Math.ceil(Math.ceil(bounds.height + bounds.y) * fixingScale + (isPdf? 0.1 : 0));
-
+								
+								var w = Math.ceil(bounds.width + bounds.x);
+								var h = Math.ceil(bounds.height + bounds.y);
 								page.setViewport({width: w, height: h});
-
-								pdfOptions = {
-									printBackground: true,
-									omitBackground: true,
-									width: w + 'px',
-									height: (h + 2) + 'px', //the extra 2 pixels to prevent adding an extra empty page
-									margin: {top: '0px', bottom: '0px', left: '0px', right: '0px'}
-								}
 							}
+
+							var pdfOptions = {
+								preferCSSPageSize: true,
+								printBackground: true,
+								omitBackground: true
+							};
 							
 							return {pdfOptions: pdfOptions, pageId: pageId, scale: scale, pageCount: pageCount, w: w, h: h};
 						}
@@ -646,13 +650,13 @@ else
 							
 							if (req.body.embedXml == "1" && req.body.format == 'png')
 							{
-								data = writePngWithText(data, "mxGraphModel", xml, true,
-										base64encoded);
+								data = writePngWithText(data, "mxGraphModel",
+									xml, true, base64encoded);
 							}
 							else if (req.body.embedData == "1" && req.body.format == 'png')
 							{
-								data = writePngWithText(data, req.body.dataHeader, req.body.data, true,
-										base64encoded);
+								data = writePngWithText(data, req.body.dataHeader,
+									req.body.data, true, base64encoded);
 							}
 							else
 							{
@@ -667,12 +671,12 @@ else
 								}
 							}
 
-							if (req.body.filename != null)
+							if (req.body.filename != null && req.body.filename != '')
 							{
 								logger.info("Filename in request " + req.body.filename);
 
 								res.header('Content-disposition', 'attachment; filename="' + req.body.filename +
-										'"; filename*=UTF-8\'\'' + req.body.filename);
+									'"; filename*=UTF-8\'\'' + req.body.filename);
 							}
 							
 							res.header('Content-type', base64encoded? 'text/plain' : ('image/' + req.body.format));
@@ -701,22 +705,30 @@ else
 						}
 						else if (req.body.format == 'pdf')
 						{
-							var from = req.body.allPages? 0 : parseInt(req.body.from || 0);
-							var to = req.body.allPages? 1000 : parseInt(req.body.to || 1000) + 1; //The 'to' will be corrected later
 							var pageId;
-							var pdfs = [];
+							var info = await renderPage()
+							var data = await page.pdf(info.pdfOptions);
 
-							for (var i = from; i < to; i++)
+							// Converts to PDF 1.7 with compression
+							const pdfDoc = await PDFDocument.load(data);
+							
+							if (req.body.embedXml == "1")
 							{
-								var info = await renderPage(i);
-								pageId = info.pageId;
-								to = to > info.pageCount? info.pageCount : to;
-								pdfs.push(await page.pdf(info.pdfOptions));
+								// KNOWN: Attachments produce smaller files but break
+								// internal links in pdf-lib so using Subject for now
+								// https://github.com/Hopding/pdf-lib/issues/341
+								// await pdfDoc.attach(Buffer.from(xml).toString('base64'), 'diagram.xml', {
+								// 	mimeType: 'application/vnd.jgraph.mxfile',
+								// 	description: 'Diagram Content'
+								// });
+								pdfDoc.setSubject(encodeURIComponent(xml).
+									replace(/\(/g, "\\(").replace(/\)/g, "\\)"));
 							}
 
-							var data = await mergePdfs(pdfs, req.body.embedXml == '1' ? xml : null);
+							const pdfBytes = await pdfDoc.save();
+							data = Buffer.from(pdfBytes);
 
-							if (req.body.filename != null)
+							if (req.body.filename != null && req.body.filename != '')
 							{
 								res.header('Content-disposition', 'attachment; filename="' + req.body.filename +
 										'"; filename*=UTF-8\'\'' + req.body.filename);
